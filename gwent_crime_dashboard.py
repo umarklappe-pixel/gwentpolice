@@ -77,7 +77,7 @@ def make_confusion_df(y_true, y_pred, labels) -> pd.DataFrame:
 # Sidebar — Data input
 # -------------------------
 
-st.sidebar.header("Gwent police")
+st.sidebar.header("Gwent police Dashboard")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"], help="Police.UK street-level CSV")
 
 # Optional sample path
