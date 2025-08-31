@@ -125,7 +125,7 @@ colC, colD = st.columns(2)
 with colC:
     if "lsoa_name" in df.columns:
         st.subheader("Top LSOAs")
-        top_lsoa = df["lsoa_name"].value_counts().head(20).reset_index()
+        top_lsoa = df["lsoa_name"].value_counts().head(10).reset_index()
         top_lsoa.columns = ["lsoa_name", "count"]
         bar = alt.Chart(top_lsoa).mark_bar().encode(
             x=alt.X("count:Q", title="Count"),
