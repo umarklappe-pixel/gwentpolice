@@ -140,6 +140,38 @@ with colD:
         map_df = df[["latitude", "longitude"]].dropna().sample(min(5000, len(df)), random_state=42)
         st.map(map_df.rename(columns={"latitude":"lat", "longitude":"lon"}))
 
+
+st.subheader("🔥 Heatmap — Top 10 Crime Types by Month")
+
+if {"month", "crime_type"}.issubset(df.columns):
+    # Ensure datetime and extract year-month properly
+    df["month"] = pd.to_datetime(df["month"], errors="coerce")
+    df["year_month"] = df["month"].dt.to_period("M").astype(str)
+
+    # Aggregate counts
+    crime_month = (
+        df.groupby(["crime_type", "year_month"])
+          .size()
+          .reset_index(name="count")
+    )
+
+    # Keep only top 10 crime types overall
+    top10_types = df["crime_type"].value_counts().head(10).index
+    crime_month = crime_month[crime_month["crime_type"].isin(top10_types)]
+
+    # Heatmap
+    heatmap = alt.Chart(crime_month).mark_rect().encode(
+        x=alt.X("year_month:N", title="Month",
+                sort=sorted(crime_month["year_month"].unique())),
+        y=alt.Y("crime_type:N", title="Crime Type"),
+        color=alt.Color("count:Q", title="Crimes", scale=alt.Scale(scheme="reds")),
+        tooltip=["crime_type", "year_month", "count:Q"]
+    )
+
+    st.altair_chart(heatmap, use_container_width=True)
+else:
+    st.info("Columns 'month' and 'crime_type' are required for this chart.")
+
 # -------------------------
 # Predictive Modeling
 # -------------------------
