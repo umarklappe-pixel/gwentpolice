@@ -20,14 +20,15 @@ from sklearn.ensemble import RandomForestClassifier
 # -------------------------
 # Page config
 # -------------------------
+
 st.set_page_config(
-    page_title="Gwent Crime — Predictive Analytics Dashboard",
-    page_icon="🚓",
+    page_title="Gwent Police — Analytics Dashboard",
+    page_icon="",
     layout="wide"
 )
 
-st.title("🚓 Gwent Police Crime — Predictive Analytics Dashboard")
-st.caption("EDA • Predictive Modeling • Interactive Insights")
+st.title("EDA — Predictive Analytics Dashboard")
+st.caption("EDA • Predictive Modeling • AI and ML")
 
 # -------------------------
 # Helper functions
@@ -70,14 +71,17 @@ def make_confusion_df(y_true, y_pred, labels) -> pd.DataFrame:
     cm = confusion_matrix(y_true, y_pred, labels=labels)
     return pd.DataFrame(cm, index=pd.Index(labels, name="True"), columns=pd.Index(labels, name="Pred"))
 
+
+
 # -------------------------
 # Sidebar — Data input
 # -------------------------
-st.sidebar.header("📥 Data")
+
+st.sidebar.header("Gwent police")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"], help="Police.UK street-level CSV")
 
 # Optional sample path
-default_path = "2022-07-gwent-street.csv"
+default_path = "example.csv"
 use_sample = st.sidebar.toggle("Use example file name in current folder", value=False)
 
 df = None
@@ -86,15 +90,42 @@ if uploaded_file is not None:
 elif use_sample and os.path.exists(default_path):
     df = load_csv(default_path)
 else:
-    st.info("👈 Upload a CSV in the sidebar to begin.")
+    st.info("Upload a CSV in the sidebar to begin.")
     st.stop()
 
 st.success(f"Loaded {len(df):,} rows • {df.shape[1]} columns")
 
 # -------------------------
+# Dataset Stats
+# -------------------------
+
+# Total crimes = total rows
+total_crimes = len(df)
+
+# Total months (if available)
+total_months = df["year_month"].nunique() if "year_month" in df.columns else "N/A"
+
+# Drop 'context' column from missing check if it exists
+df_check = df.drop(columns=["context"], errors="ignore")
+
+# Find rows with NaN or empty values (excluding 'context')
+incomplete_rows = df_check[
+    df_check.isna().any(axis=1) | (df_check.astype(str).apply(lambda x: x.str.strip() == "").any(axis=1))
+]
+
+incomplete_count = len(incomplete_rows)
+
+# Show summary stats
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Crimes", f"{total_crimes:,}")
+col2.metric("Total Months", f"{total_months}")
+col3.metric("Incomplete Rows", f"{incomplete_count:,}")
+
+
+# -------------------------
 # EDA (always full data)
 # -------------------------
-st.header("📊 Exploratory Data Analysis (EDA)")
+st.header("Exploratory Data Analysis (EDA)")
 
 colA, colB = st.columns(2)
 with colA:
@@ -124,8 +155,8 @@ with colB:
 colC, colD = st.columns(2)
 with colC:
     if "lsoa_name" in df.columns:
-        st.subheader("Top LSOAs")
-        top_lsoa = df["lsoa_name"].value_counts().head(10).reset_index()
+        st.subheader("Top Crime Locations")
+        top_lsoa = df["lsoa_name"].value_counts().head(20).reset_index()
         top_lsoa.columns = ["lsoa_name", "count"]
         bar = alt.Chart(top_lsoa).mark_bar().encode(
             x=alt.X("count:Q", title="Count"),
@@ -134,16 +165,14 @@ with colC:
         )
         st.altair_chart(bar, use_container_width=True)
 
-
-
 with colD:
     if {"latitude", "longitude"}.issubset(df.columns):
-        st.subheader("Crime Map (sample up to 5,000 points)")
+        st.subheader("Crime Map (sample upto 5,000 pts)")
         map_df = df[["latitude", "longitude"]].dropna().sample(min(5000, len(df)), random_state=42)
         st.map(map_df.rename(columns={"latitude":"lat", "longitude":"lon"}))
 
 
-st.subheader("🔥 Heatmap — Top 10 Crime Types by Month")
+st.subheader("Heatmap — Top 10 Crime Types by Month")
 
 if {"month", "crime_type"}.issubset(df.columns):
     # Ensure datetime and extract year-month properly
@@ -160,7 +189,7 @@ if {"month", "crime_type"}.issubset(df.columns):
     # Keep only top 10 crime types overall
     top10_types = df["crime_type"].value_counts().head(10).index
     crime_month = crime_month[crime_month["crime_type"].isin(top10_types)]
-
+    
     # Heatmap
     heatmap = alt.Chart(crime_month).mark_rect().encode(
         x=alt.X("year_month:N", title="Month",
@@ -177,7 +206,36 @@ else:
 # -------------------------
 # Predictive Modeling
 # -------------------------
-st.header("🤖 Predictive Model")
+
+st.header("Predictive Model")
+
+if "year_month" in df.columns and "crime_type" in df.columns:
+    st.subheader("History Data (Trends — Top 6 Crime Types)")
+
+    # Aggregate monthly counts by crime type
+    ts = (
+        df.groupby(["year_month", "crime_type"])
+          .size()
+          .reset_index(name="count")
+    )
+    ts["year_month"] = pd.to_datetime(ts["year_month"], errors="coerce")
+
+    # Pick top 6 crime types overall
+    top6_types = df["crime_type"].value_counts().head(6).index
+    ts_top6 = ts[ts["crime_type"].isin(top6_types)]
+
+    # Multi-line chart
+    line = alt.Chart(ts_top6).mark_line(point=True).encode(
+        x=alt.X("year_month:T", title="Month"),
+        y=alt.Y("count:Q", title="Crimes"),
+        color=alt.Color("crime_type:N", title="Crime Type"),
+        tooltip=["year_month:T", "crime_type", "count:Q"]
+    ).properties(height=400)
+
+    st.altair_chart(line, use_container_width=True)
+else:
+    st.info("Columns 'year_month' and 'crime_type' are required for this chart.")
+
 
 # Month selection for training
 if "year_month" not in df.columns:
@@ -189,7 +247,7 @@ default_months = sorted(all_months)[-6:]
 
 selected_months = st.multiselect("Select up to 6 months for training", options=all_months, default=default_months)
 if len(selected_months) > 6:
-    st.error("⚠️ Please select a maximum of 6 months.")
+    st.error("Please select a maximum of 6 months.")
     st.stop()
 
 # Target selection
@@ -212,7 +270,7 @@ if not selected_features:
 model_choice = st.selectbox("Model", ["Logistic Regression", "Random Forest"], index=1)
 
 # Button to start training
-if st.button("🚀 Start Training"):
+if st.button("Start Training"):
     model_df = df[df["year_month"].isin(selected_months)].dropna(subset=[target_col]).copy()
 
     # Handle missing values in features
@@ -264,5 +322,5 @@ if st.button("🚀 Start Training"):
     cm_chart = px.imshow(cm_df.values, x=labels, y=labels, labels=dict(x="Predicted", y="True", color="Count"))
     st.plotly_chart(cm_chart, use_container_width=True)
 
-    with st.expander("📄 Classification Report", expanded=False):
+    with st.expander("Classification Report", expanded=False):
         st.text(classification_report(y_test, y_pred, zero_division=0))
