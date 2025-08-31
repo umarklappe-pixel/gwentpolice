@@ -181,14 +181,21 @@ model_choice = st.selectbox("Model", ["Logistic Regression", "Random Forest"], i
 if st.button("🚀 Start Training"):
     model_df = df[df["year_month"].isin(selected_months)].dropna(subset=[target_col]).copy()
 
+    # Handle missing values in features
     for col in selected_features:
         if model_df[col].dtype == "object":
+            model_df[col] = model_df[col].fillna("Unknown")
             model_df[col] = pick_top_categories(model_df[col], top_n=40)
+        else:
+            model_df[col] = model_df[col].fillna(model_df[col].median())
 
     X = model_df[selected_features].copy()
     y = model_df[target_col].astype(str)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y if y.nunique() > 1 else None)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42,
+        stratify=y if y.nunique() > 1 else None
+    )
 
     cat_cols = [c for c in selected_features if X[c].dtype == "object"]
     num_cols = [c for c in selected_features if c not in cat_cols]
