@@ -13,9 +13,17 @@ from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    confusion_matrix,
+    classification_report,
+    r2_score,
+    mean_absolute_error,
+    mean_squared_error
+)
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 # -------------------------
 # Page config
@@ -70,7 +78,6 @@ def pick_top_categories(series: pd.Series, top_n: int = 30) -> pd.Series:
 def make_confusion_df(y_true, y_pred, labels) -> pd.DataFrame:
     cm = confusion_matrix(y_true, y_pred, labels=labels)
     return pd.DataFrame(cm, index=pd.Index(labels, name="True"), columns=pd.Index(labels, name="Pred"))
-
 
 
 # -------------------------
@@ -204,38 +211,10 @@ else:
     st.info("Columns 'month' and 'crime_type' are required for this chart.")
 
 # -------------------------
-# Predictive Modeling
+# Predictive Modeling (Classification)
 # -------------------------
 
-st.header("Predictive Model")
-
-if "year_month" in df.columns and "crime_type" in df.columns:
-    st.subheader("History Data (Trends — Top 6 Crime Types)")
-
-    # Aggregate monthly counts by crime type
-    ts = (
-        df.groupby(["year_month", "crime_type"])
-          .size()
-          .reset_index(name="count")
-    )
-    ts["year_month"] = pd.to_datetime(ts["year_month"], errors="coerce")
-
-    # Pick top 6 crime types overall
-    top6_types = df["crime_type"].value_counts().head(6).index
-    ts_top6 = ts[ts["crime_type"].isin(top6_types)]
-
-    # Multi-line chart
-    line = alt.Chart(ts_top6).mark_line(point=True).encode(
-        x=alt.X("year_month:T", title="Month"),
-        y=alt.Y("count:Q", title="Crimes"),
-        color=alt.Color("crime_type:N", title="Crime Type"),
-        tooltip=["year_month:T", "crime_type", "count:Q"]
-    ).properties(height=400)
-
-    st.altair_chart(line, use_container_width=True)
-else:
-    st.info("Columns 'year_month' and 'crime_type' are required for this chart.")
-
+st.header("Predictive Model — Classification")
 
 # Month selection for training
 if "year_month" not in df.columns:
@@ -258,7 +237,7 @@ if not possible_targets:
 
 target_col = st.selectbox("Choose target to predict", options=possible_targets, index=0)
 
-selected_features = [c for c in ["lsoa_name", "year_month", "latitude", "longitude"] if c in df.columns]
+selected_features = [c for c in ["lsoa_name", "year_month"] if c in df.columns]
 
 # Button to start training
 if st.button("Start Training with Random Forest"):
@@ -304,3 +283,100 @@ if st.button("Start Training with Random Forest"):
     mcol1.metric("Accuracy", f"{acc:.3f}")
     mcol2.metric("Macro F1", f"{f1m:.3f}")
     mcol3.metric("Classes", f"{len(labels)}")
+
+
+# -------------------------
+# Forecasting Section (6 months history + 6 months forecast)
+# -------------------------
+
+if "year_month" in df.columns and "crime_type" in df.columns:
+    if st.button("Run Forecasting Model"):
+        # Aggregate monthly counts
+        ts = (
+            df.groupby(["year_month", "crime_type"])
+              .size()
+              .reset_index(name="count")
+        )
+        ts["year_month"] = pd.to_datetime(ts["year_month"], errors="coerce")
+
+        # Pick top 6 crime types
+        top6_types = df["crime_type"].value_counts().head(6).index
+        ts_top6 = ts[ts["crime_type"].isin(top6_types)]
+
+        # Add features for regression
+        ts_top6["year"] = ts_top6["year_month"].dt.year
+        ts_top6["month"] = ts_top6["year_month"].dt.month
+        ts_top6["time_index"] = (
+            (ts_top6["year"] - ts_top6["year"].min()) * 12 + ts_top6["month"]
+        )
+
+        # Last 6 months history
+        max_date = ts_top6["year_month"].max()
+        min_date = max_date - pd.DateOffset(months=5)
+        history_df = ts_top6[ts_top6["year_month"].between(min_date, max_date)]
+
+        # Next 6 months future
+        future_months = pd.date_range(
+            start=max_date + pd.offsets.MonthBegin(1),
+            periods=6, freq="MS"
+        )
+        future_df = pd.DataFrame({
+            "year_month": future_months,
+            "year": future_months.year,
+            "month": future_months.month,
+            "time_index": (
+                (future_months.year - ts_top6["year"].min()) * 12 + future_months.month
+            )
+        })
+
+        preds, metrics = [], []
+        for crime in top6_types:
+            sub = ts_top6[ts_top6["crime_type"] == crime]
+            X = sub[["time_index", "year", "month"]]
+            y = sub["count"]
+
+            if len(sub) > 12:
+                model = RandomForestRegressor(n_estimators=500, random_state=42)
+                model.fit(X, y)
+
+                # Evaluate on training set
+                y_pred = model.predict(X)
+                r2 = r2_score(y, y_pred)
+                mae = mean_absolute_error(y, y_pred)
+                rmse = np.sqrt(mean_squared_error(y, y_pred))
+                metrics.append([crime, round(r2, 3), round(mae, 2), round(rmse, 2)])
+
+                # Predict future
+                future_counts = model.predict(future_df[["time_index", "year", "month"]])
+                temp = future_df.copy()
+                temp["crime_type"] = crime
+                temp["count"] = np.round(future_counts).astype(int)
+                preds.append(temp)
+
+        pred_df = pd.concat(preds)
+
+        # Mark history vs prediction
+        history_df = history_df.copy()
+        history_df["Type"] = "History"
+        pred_df["Type"] = "Prediction"
+        combined = pd.concat([history_df, pred_df])
+
+        # Chart with dashed predictions
+        forecast_line = alt.Chart(combined).mark_line(point=True).encode(
+            x="year_month:T",
+            y="count:Q",
+            color="crime_type:N",
+            strokeDash="Type:N",
+            tooltip=["year_month:T", "crime_type:N", "count:Q", "Type:N"]
+        ).properties(height=400)
+
+        st.subheader("Crime Trends (6 Months History + 6 Months Forecast)")
+        st.altair_chart(forecast_line, use_container_width=True)
+
+        # Metrics table
+        if metrics:
+            st.subheader("Model Success Rate (Training Performance)")
+            metric_df = pd.DataFrame(metrics, columns=["Crime Type", "R²", "MAE", "RMSE"])
+            st.dataframe(metric_df)
+else:
+    st.warning("Both 'year_month' and 'crime_type' columns are required for forecasting.")
