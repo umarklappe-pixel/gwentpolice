@@ -204,7 +204,6 @@ else:
     st.info("Columns 'month' and 'crime_type' are required for this chart.")
 
 # -------------------------
-# -------------------------
 # Predictive Modeling (Counts Forecast with Seasonality)
 # -------------------------
 
@@ -272,7 +271,7 @@ if "year_month" in df.columns and "crime_type" in df.columns:
             y_pred = model.predict(X)
             r2 = r2_score(y, y_pred)
             mae = mean_absolute_error(y, y_pred)
-            rmse = mean_squared_error(y, y_pred, squared=False)
+            rmse = np.sqrt(mean_squared_error(y, y_pred))   # <-- fixed RMSE
             metrics.append([crime, round(r2, 3), round(mae, 2), round(rmse, 2)])
 
             # Forecast
@@ -310,8 +309,3 @@ if "year_month" in df.columns and "crime_type" in df.columns:
 
 else:
     st.warning("Both 'year_month' and 'crime_type' columns are required.")
-    cm_chart = px.imshow(cm_df.values, x=labels, y=labels, labels=dict(x="Predicted", y="True", color="Count"))
-    st.plotly_chart(cm_chart, use_container_width=True)
-
-    with st.expander("Classification Report", expanded=False):
-        st.text(classification_report(y_test, y_pred, zero_division=0))
