@@ -309,3 +309,121 @@ if "year_month" in df.columns and "crime_type" in df.columns:
 
 else:
     st.warning("Both 'year_month' and 'crime_type' columns are required.")
+
+
+
+
+
+
+
+# -------------------------
+# Predictive Modeling (Counts Forecast with Random Forest)
+# -------------------------
+
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+st.header("Predictive Model (Counts Forecast)")
+
+if "year_month" in df.columns and "crime_type" in df.columns:
+    st.subheader("Crime Prediction Settings")
+
+    # User picks number of months history + forecast (fixed to 6 + 6 here)
+    history_months = 6
+    forecast_months = 6
+
+    # Start prediction button
+    if st.button("Run Predictor"):
+        # Aggregate monthly counts
+        ts = (
+            df.groupby(["year_month", "crime_type"])
+              .size()
+              .reset_index(name="count")
+        )
+        ts["year_month"] = pd.to_datetime(ts["year_month"], errors="coerce")
+
+        # Pick top 6 crime types
+        top6_types = df["crime_type"].value_counts().head(6).index
+        ts_top6 = ts[ts["crime_type"].isin(top6_types)]
+
+        # Add features
+        ts_top6["year"] = ts_top6["year_month"].dt.year
+        ts_top6["month"] = ts_top6["year_month"].dt.month
+        ts_top6["time_index"] = (
+            (ts_top6["year"] - ts_top6["year"].min()) * 12 + ts_top6["month"]
+        )
+
+        # Last N months for history
+        max_date = ts_top6["year_month"].max()
+        min_date = max_date - pd.DateOffset(months=history_months - 1)
+        history_df = ts_top6[ts_top6["year_month"].between(min_date, max_date)]
+
+        # Future dates
+        future_months = pd.date_range(
+            start=max_date + pd.offsets.MonthBegin(1),
+            periods=forecast_months, freq="MS"
+        )
+        future_df = pd.DataFrame({
+            "year_month": future_months,
+            "year": future_months.year,
+            "month": future_months.month,
+            "time_index": (
+                (future_months.year - ts_top6["year"].min()) * 12 + future_months.month
+            )
+        })
+
+        preds = []
+        metrics = []
+        for crime in top6_types:
+            sub = ts_top6[ts_top6["crime_type"] == crime]
+            X = sub[["time_index", "year", "month"]]
+            y = sub["count"]
+
+            if len(sub) > 12:  # train only if enough history
+                model = RandomForestRegressor(n_estimators=500, random_state=42)
+                model.fit(X, y)
+
+                # Evaluate model
+                y_pred = model.predict(X)
+                r2 = r2_score(y, y_pred)
+                mae = mean_absolute_error(y, y_pred)
+                rmse = np.sqrt(mean_squared_error(y, y_pred))
+                metrics.append([crime, round(r2, 3), round(mae, 2), round(rmse, 2)])
+
+                # Forecast
+                future_counts = model.predict(future_df[["time_index", "year", "month"]])
+                temp = future_df.copy()
+                temp["crime_type"] = crime
+                temp["count"] = np.round(future_counts).astype(int)
+                preds.append(temp)
+
+        pred_df = pd.concat(preds)
+
+        # Mark history vs prediction
+        history_df = history_df.copy()
+        history_df["Type"] = "History"
+        pred_df["Type"] = "Prediction"
+
+        combined = pd.concat([history_df, pred_df])
+
+        # Chart (history solid, prediction dashed)
+        forecast_line = alt.Chart(combined).mark_line(point=True).encode(
+            x="year_month:T",
+            y="count:Q",
+            color="crime_type:N",
+            strokeDash="Type:N",
+            tooltip=["year_month:T", "crime_type:N", "count:Q", "Type:N"]
+        ).properties(height=400)
+
+        st.subheader("Crime Trends (6 Months History + 6 Months Forecast)")
+        st.altair_chart(forecast_line, use_container_width=True)
+
+        # Model success table
+        if metrics:
+            st.subheader("Model Success Rate (Training Performance)")
+            metric_df = pd.DataFrame(metrics, columns=["Crime Type", "R²", "MAE", "RMSE"])
+            st.dataframe(metric_df)
+
+else:
+    st.warning("Both 'year_month' and 'crime_type' columns are required.")
+
