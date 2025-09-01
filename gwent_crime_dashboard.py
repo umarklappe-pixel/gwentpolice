@@ -249,9 +249,9 @@ selected_months = st.multiselect(
     options=all_months, 
     default=default_months
 )
-if len(selected_months) > 6:
-    st.error("Please select a maximum of 6 months.")
-    st.stop()
+#if len(selected_months) > 6:
+#    st.error("Please select a maximum of 6 months.")
+#    st.stop()
 
 # Target selection
 possible_targets = [c for c in ["crime_type", "last_outcome_category"] if c in df.columns]
