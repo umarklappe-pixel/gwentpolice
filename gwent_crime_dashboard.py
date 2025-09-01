@@ -317,6 +317,69 @@ if st.button("Start Training"):
     mcol2.metric("Macro F1", f"{f1m:.3f}")
     mcol3.metric("Classes", f"{len(labels)}")
 
+    if model_choice == "Random Forest":
+    # --- Success rate (already computed above as acc) ---
+    st.subheader("Model Success Rate")
+    st.metric("Random Forest Accuracy", f"{acc:.2%}")
+
+    # --- Predict future 6 months ---
+    st.subheader("Prediction — Next 6 Months (Top 6 Crime Types)")
+
+    # Find last known month
+    last_month = pd.to_datetime(df["year_month"]).max()
+    future_months = pd.date_range(start=last_month + pd.offsets.MonthBegin(1),
+                                  periods=6, freq="MS").strftime("%Y-%m").tolist()
+
+    # Build feature frame for prediction
+    future_df = []
+    for m in future_months:
+        for loc in df["lsoa_name"].value_counts().head(5).index:  # top 5 locations for demo
+            row = {col: "Unknown" for col in selected_features}  # default fill
+            if "year_month" in selected_features:
+                row["year_month"] = m
+            if "lsoa_name" in selected_features:
+                row["lsoa_name"] = loc
+            future_df.append(row)
+
+    future_df = pd.DataFrame(future_df)
+
+    # Apply same preprocessing categories (fill missing, pick top cats)
+    for col in selected_features:
+        if future_df[col].dtype == "object":
+            future_df[col] = pick_top_categories(future_df[col], top_n=40)
+
+    # Predict
+    future_pred = pipe.predict(future_df[selected_features])
+
+    # Aggregate predictions by month + crime type
+    pred_df = pd.DataFrame({
+        "year_month": future_df["year_month"],
+        "crime_type": future_pred
+    })
+    pred_counts = pred_df.groupby(["year_month", "crime_type"]).size().reset_index(name="count")
+    pred_counts["year_month"] = pd.to_datetime(pred_counts["year_month"])
+
+    # Pick top 6 types overall
+    top6_pred = pred_counts[pred_counts["crime_type"].isin(top6_types)]
+
+    # Plot history + predictions
+    history = ts_top6.copy()
+    history["Type"] = "History"
+    top6_pred["Type"] = "Prediction"
+
+    combined = pd.concat([history.rename(columns={"crime_type":"Crime Type"}),
+                          top6_pred.rename(columns={"crime_type":"Crime Type"})])
+
+    line = alt.Chart(combined).mark_line(point=True).encode(
+        x=alt.X("year_month:T", title="Month"),
+        y=alt.Y("count:Q", title="Crimes"),
+        color=alt.Color("Crime Type:N", title="Crime Type"),
+        strokeDash="Type:N",  # dashed lines for prediction
+        tooltip=["year_month:T", "Crime Type", "count:Q", "Type"]
+    ).properties(height=400)
+
+    st.altair_chart(line, use_container_width=True)    
+
     st.subheader("Confusion Matrix")
     cm_df = make_confusion_df(y_test, y_pred, labels)
     cm_chart = px.imshow(cm_df.values, x=labels, y=labels, labels=dict(x="Predicted", y="True", color="Count"))
