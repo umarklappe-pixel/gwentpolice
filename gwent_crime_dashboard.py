@@ -258,7 +258,7 @@ if not possible_targets:
 
 target_col = st.selectbox("Choose target to predict", options=possible_targets, index=0)
 
-selected_features = [c for c in ["lsoa_name", "location", "year_month", "latitude", "longitude"] if c in df.columns]
+selected_features = [c for c in ["lsoa_name", "year_month", "latitude", "longitude"] if c in df.columns]
 
 # Button to start training
 if st.button("Start Training with Random Forest"):
