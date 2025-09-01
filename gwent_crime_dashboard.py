@@ -245,9 +245,9 @@ if "year_month" not in df.columns:
 all_months = sorted(df["year_month"].unique())
 default_months = sorted(all_months)[-6:]
 
-selected_months = st.multiselect("Select up to 6 months for training", options=all_months, default=default_months)
-if len(selected_months) > 6:
-    st.error("Please select a maximum of 6 months.")
+selected_months = st.multiselect("Select up to 18 months for training", options=all_months, default=default_months)
+if len(selected_months) > 18:
+    st.error("Please select a maximum of 18 months.")
     st.stop()
 
 # Target selection
@@ -258,19 +258,10 @@ if not possible_targets:
 
 target_col = st.selectbox("Choose target to predict", options=possible_targets, index=0)
 
-candidate_features = [c for c in ["lsoa_name", "location", "reported_by", "falls_within", "year_month"] if c in df.columns and c != target_col]
-if {"latitude", "longitude"}.issubset(df.columns):
-    candidate_features += ["latitude", "longitude"]
-
-selected_features = st.multiselect("Select features", options=candidate_features, default=candidate_features[:5])
-if not selected_features:
-    st.warning("Select at least one feature to train the model.")
-    st.stop()
-
-model_choice = st.selectbox("Model", ["Logistic Regression", "Random Forest"], index=1)
+selected_features = [c for c in ["lsoa_name", "location", "year_month", "latitude", "longitude"] if c in df.columns]
 
 # Button to start training
-if st.button("Start Training"):
+if st.button("Start Training with Random Forest"):
     model_df = df[df["year_month"].isin(selected_months)].dropna(subset=[target_col]).copy()
 
     # Handle missing values in features
@@ -297,10 +288,7 @@ if st.button("Start Training"):
         ("num", StandardScaler(with_mean=False), num_cols)
     ])
 
-    if model_choice == "Logistic Regression":
-        clf = LogisticRegression(max_iter=1000)
-    else:
-        clf = RandomForestClassifier(n_estimators=300, random_state=42, n_jobs=-1)
+    clf = RandomForestClassifier(n_estimators=300, random_state=42, n_jobs=-1)
 
     pipe = Pipeline(steps=[("prep", preprocess), ("model", clf)])
 
@@ -316,11 +304,3 @@ if st.button("Start Training"):
     mcol1.metric("Accuracy", f"{acc:.3f}")
     mcol2.metric("Macro F1", f"{f1m:.3f}")
     mcol3.metric("Classes", f"{len(labels)}")
-
-    st.subheader("Confusion Matrix")
-    cm_df = make_confusion_df(y_test, y_pred, labels)
-    cm_chart = px.imshow(cm_df.values, x=labels, y=labels, labels=dict(x="Predicted", y="True", color="Count"))
-    st.plotly_chart(cm_chart, use_container_width=True)
-
-    with st.expander("Classification Report", expanded=False):
-        st.text(classification_report(y_test, y_pred, zero_division=0))
