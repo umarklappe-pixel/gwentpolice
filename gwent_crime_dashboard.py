@@ -35,7 +35,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("EDA — Predictive Analytics Dashboard")
+st.title("Gwent police — EDA & Predictive Dashboard")
 st.caption("EDA • Predictive Modeling • AI and ML")
 
 # -------------------------
